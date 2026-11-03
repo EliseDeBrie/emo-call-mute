@@ -76,8 +76,13 @@ def log(msg: str):
 
 # ── saved EMO state (survives a restart of the script) ────────────────────────
 def valid_state(volume, carry) -> bool:
-    # bool is a subclass of int; reject it for volume so `true` is not read as "low"
-    return type(volume) is int and 0 <= volume < len(VOLUME_OPS) and carry in (0, 1)
+    # bool is a subclass of int; reject it so JSON true/false cannot masquerade as settings.
+    return (
+        type(volume) is int
+        and 0 <= volume < len(VOLUME_OPS)
+        and type(carry) is int
+        and carry in (0, 1)
+    )
 
 
 def load_state() -> dict:
@@ -103,6 +108,11 @@ def save_state(saved: dict):
         os.replace(tmp, STATE_FILE)
     except OSError as e:
         log(f"  could not write state file: {e}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise RuntimeError(f"could not persist EMO state; refusing to mute: {e}") from e
 
 
 def clear_state():
@@ -197,11 +207,15 @@ class Target:
 
 
 async def find_emo() -> str:
-    for d in await BleakScanner.discover(timeout=10):
-        if d.name and d.name.upper().startswith(EMO_NAME_PREFIX):
-            log(f"  found {d.name} at {d.address}")
-            return d.address
-    raise RuntimeError("EMO not found via Bluetooth scan")
+    device = await BleakScanner.find_device_by_filter(
+        lambda d, _advertisement: d.name is not None
+        and d.name.upper().startswith(EMO_NAME_PREFIX),
+        timeout=10,
+    )
+    if device is None:
+        raise RuntimeError("EMO not found via Bluetooth scan")
+    log(f"  found {device.name} at {device.address}")
+    return device.address
 
 
 class Emo:
@@ -322,11 +336,13 @@ async def set_quiet(target, use_carry, saved):
     unless an earlier, not yet restored state is already there."""
     async with Emo(target) as emo:
         if "volume" not in saved:
-            volume, carry = emo.pref.get("volume"), emo.pref.get("carry", 0)
+            volume, carry = emo.pref.get("volume"), emo.pref.get("carry")
             if not valid_state(volume, carry):
                 raise RuntimeError(f"unexpected settings from EMO: volume={volume!r}, carry={carry!r}")
-            saved.update(volume=volume, carry=int(carry))
-            save_state(saved)
+            candidate = {"volume": volume, "carry": carry}
+            # Persist first: do not change EMO unless restart recovery is durable.
+            save_state(candidate)
+            saved.update(candidate)
             log(f"  EMO was: volume={VOLUME_NAMES[volume]}, carry={saved['carry']}")
         ops = []
         if emo.pref.get("volume") != 0:
@@ -450,3 +466,4 @@ if __name__ == "__main__":
         asyncio.run(main(a))
     except KeyboardInterrupt:
         pass
+
