@@ -2,7 +2,7 @@
 
 Keeps your [EMO desktop robot](https://living.ai/emo/) quiet while you are in a Microsoft Teams call.
 
-When Teams starts using the microphone, the script mutes EMO and switches on Carry Mode (so he stops wandering and dancing). When the call ends, it puts his previous volume back and switches Carry Mode off. It runs in the background on Windows and needs no admin rights.
+When Teams starts using the microphone, the script mutes EMO and switches on Carry Mode (so he stops wandering and dancing). When the call ends, it puts his previous volume and Carry Mode setting back. It runs in the background on Windows and needs no admin rights.
 
 Not affiliated with Living.ai. The Bluetooth protocol is reverse-engineered by the community; see [Credits](#credits).
 
@@ -13,6 +13,7 @@ Not affiliated with Living.ai. The Bluetooth protocol is reverse-engineered by t
   A `LastUsedTimeStop` value of `0` means "in use right now". Teams holds the microphone for the whole call, also while you are muted inside Teams.
 - **EMO control:** Bluetooth Low Energy, the same commands the EMO app sends (`volume_mute`, `carry_on`, …), via [bleak](https://github.com/hbldh/bleak).
 - During a call the script reconnects every 5 minutes and re-applies mute and Carry Mode in case EMO changed them himself. If EMO is out of range (you are not at home), it retries every 2 minutes and otherwise stays out of the way.
+- EMO's settings from before the call are also written to `emo_callmute.state.json`. If restoring fails (EMO out of range, phone app connected), the script keeps retrying every 2 minutes after the call. If the script is stopped or restarted during a call, the next start restores EMO from that file. The file is deleted once EMO is restored.
 
 Tested with EMO firmware 3.2.0.p1 (#42) on Windows 11. Carry Mode needs firmware newer than #35.
 
@@ -27,7 +28,7 @@ Tested with EMO firmware 3.2.0.p1 (#42) on Windows 11. Carry Mode needs firmware
 
 | File | What it does |
 |---|---|
-| `emo_callmute.py` | The script. Watches for calls, mutes and restores EMO, writes `emo_callmute.log` next to itself. |
+| `emo_callmute.py` | The script. Watches for calls, mutes and restores EMO, writes `emo_callmute.log` (and, while EMO is muted, `emo_callmute.state.json`) next to itself. |
 | `mic_test.py` | Read-only check: prints which apps hold the microphone or webcam, each time that changes. Use it to see what your Teams looks like to Windows. |
 | `emo_test.py` | Read-only check: finds EMO over Bluetooth and prints his firmware and current settings. Changes nothing. |
 
@@ -44,7 +45,7 @@ Options for `emo_callmute.py`:
 
 | Option | Effect |
 |---|---|
-| `--emo AA:BB:CC:DD:EE:FF` | Connect to this address and skip the 10-second scan. `emo_test.py` prints yours. You can also set `DEFAULT_EMO_MAC` at the top of the script. |
+| `--emo AA:BB:CC:DD:EE:FF` | Connect to this address and skip the 10-second scan. `emo_test.py` prints yours. You can also set `DEFAULT_EMO_MAC` at the top of the script. Recommended: without it the script connects to the first Bluetooth device whose name starts with `EMO`. |
 | `--no-carry` | Only mute; EMO keeps moving. |
 | `--any-app` | Trigger on any app that uses the microphone, not only Teams. |
 
@@ -81,6 +82,8 @@ If `Start-ScheduledTask` leaves the task in state `Ready` with result `214794266
 - Whether mute silences every sound EMO makes (singing included) is not documented by Living.ai. In practice he stayed quiet.
 - EMO owners report that he sometimes unmutes himself; turning off *Schedule Sound* in the app (Settings > Preferences) helps.
 - The script only knows Windows (`winreg`).
+- Without `--emo`, any nearby Bluetooth device that names itself `EMO…` can be picked by the scan. The script only sends it volume and Carry Mode commands and checks the values it gets back, but pinning the address avoids it.
+- `emo_callmute.log` records when calls started and ended.
 
 ## Credits
 

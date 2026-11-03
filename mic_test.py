@@ -1,11 +1,11 @@
-"""
+r"""
 mic_test.py - Test whether Windows reports the microphone as "in use" during a Teams call,
 also while you are muted in Teams.
 
 Reads only. Nothing is changed on the PC and nothing is sent to EMO.
 
-How it works (source: Windows CapabilityAccessManager registry, see chat for links):
-  HKCU\\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone
+How it works (Windows CapabilityAccessManager registry):
+  HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone
   Every app that used the mic has a subkey with a value LastUsedTimeStop.
   LastUsedTimeStop == 0  ->  that app is using the mic right now.
 

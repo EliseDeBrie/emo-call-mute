@@ -1,3 +1,5 @@
 __pycache__/
 *.log
 *.log.old
+emo_callmute.state.json
+emo_callmute.state.json.tmp

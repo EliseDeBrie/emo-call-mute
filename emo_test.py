@@ -53,9 +53,10 @@ class Parser:
             self.total = 0
             self.buf = bytearray()
             try:
-                return json.loads(raw.decode("utf-8"))
-            except Exception:
+                msg = json.loads(raw.decode("utf-8"))
+            except ValueError:
                 return None
+            return msg if isinstance(msg, dict) else None
         return None
 
 
@@ -63,14 +64,14 @@ async def main():
     print("Scanning for EMO (10 s) ...")
     addr = None
     for d in await BleakScanner.discover(timeout=10):
-        if d.name and "EMO" in d.name.upper():
+        if d.name and d.name.upper().startswith("EMO"):
             addr = d.address
             print(f"Found: {d.name}  {d.address}")
             break
     if not addr:
         sys.exit("No EMO found. Is Bluetooth on, and is EMO awake and not connected to the app?")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
     parser = Parser()
 
