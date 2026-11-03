@@ -97,7 +97,15 @@ def load_state() -> dict:
     if not isinstance(s, dict) or not valid_state(s.get("volume"), s.get("carry")):
         log(f"Ignoring invalid state file {STATE_FILE}: {s!r}")
         return {}
-    return {"volume": s["volume"], "carry": int(s["carry"])}
+    carry_changed = s.get("carry_changed", True)
+    if type(carry_changed) is not bool:
+        log(f"Ignoring invalid state file {STATE_FILE}: {s!r}")
+        return {}
+    return {
+        "volume": s["volume"],
+        "carry": int(s["carry"]),
+        "carry_changed": carry_changed,
+    }
 
 
 def save_state(saved: dict):
@@ -339,7 +347,11 @@ async def set_quiet(target, use_carry, saved):
             volume, carry = emo.pref.get("volume"), emo.pref.get("carry")
             if not valid_state(volume, carry):
                 raise RuntimeError(f"unexpected settings from EMO: volume={volume!r}, carry={carry!r}")
-            candidate = {"volume": volume, "carry": carry}
+            candidate = {
+                "volume": volume,
+                "carry": carry,
+                "carry_changed": use_carry and carry != 1,
+            }
             # Persist first: do not change EMO unless restart recovery is durable.
             save_state(candidate)
             saved.update(candidate)
@@ -355,12 +367,12 @@ async def set_quiet(target, use_carry, saved):
         return await emo.apply(ops)
 
 
-async def restore(target, use_carry, saved):
+async def restore(target, saved):
     async with Emo(target) as emo:
         ops = []
         if emo.pref.get("volume") != saved["volume"]:
             ops.append(VOLUME_OPS[saved["volume"]])
-        if use_carry and emo.pref.get("carry") != saved["carry"]:
+        if saved["carry_changed"] and emo.pref.get("carry") != saved["carry"]:
             ops.append("carry_on" if saved["carry"] else "carry_off")
         if not ops:
             log("  EMO already restored")
@@ -381,10 +393,10 @@ async def with_retry(coro_factory, what, tries=3):
     return False
 
 
-async def restore_and_clear(target, use_carry, saved, tries=3) -> bool:
+async def restore_and_clear(target, saved, tries=3) -> bool:
     """Restore EMO. Only on success forget the saved state; otherwise keep it (and the
     state file) so the restore is retried later instead of being lost."""
-    if await with_retry(lambda: restore(target, use_carry, saved), "restore", tries):
+    if await with_retry(lambda: restore(target, saved), "restore", tries):
         saved.clear()
         clear_state()
         return True
@@ -429,7 +441,7 @@ async def main(args):
                 quiet_applied = False
                 if saved:
                     log("Call ended -> restoring EMO")
-                    await restore_and_clear(target, use_carry, saved)
+                    await restore_and_clear(target, saved)
                 else:
                     log("Call ended (EMO was never reached, nothing to restore)")
                 last_attempt = time.monotonic()
@@ -437,7 +449,7 @@ async def main(args):
             elif saved and time.monotonic() - last_attempt >= RETRY_SECONDS:
                 # No call, but an earlier restore failed (or the script was restarted mid-call).
                 log("Restoring EMO (pending from earlier)")
-                await restore_and_clear(target, use_carry, saved, tries=1)
+                await restore_and_clear(target, saved, tries=1)
                 last_attempt = time.monotonic()
 
             await asyncio.sleep(POLL_SECONDS)
@@ -451,7 +463,7 @@ async def main(args):
     finally:
         if saved:
             log("Stopping with EMO still quiet -> restoring first")
-            if not await restore_and_clear(target, use_carry, saved, tries=3 if call_active else 1):
+            if not await restore_and_clear(target, saved, tries=3 if call_active else 1):
                 log(f"  state kept in {STATE_FILE}; the next start restores EMO")
         log("Stopped.")
 
